@@ -5,9 +5,9 @@ from cv_bridge import CvBridge
 import cv2
 import numpy as np
 
-class RedDetector(Node):
+class ColorDetector(Node):
     def __init__(self):
-        super().__init__('red_detector')
+        super().__init__('color_detector')
         self.subscription = self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
         self.bridge = CvBridge()
 
@@ -31,7 +31,7 @@ class RedDetector(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = RedDetector()
+    node = ColorDetector()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
