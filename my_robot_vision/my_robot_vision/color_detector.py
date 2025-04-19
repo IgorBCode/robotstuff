@@ -1,100 +1,127 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
-import time
-from nav_msgs.msg import Odometry
+import math
 
-class ColorDetector(Node):
+FORWARD_DISTANCE = 2.0
+LINEAR_SPEED = 1.0
+ANGULAR_SPEED = 0.4
+TURN_ANGLE = math.pi / 2
+ANGLE_TOLERANCE = 0.03
+DIST_TOLERANCE = 0.05
+
+class ColorMove(Node):
     def __init__(self):
-        super().__init__('color_detector')
-        self.subscription = self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
+        super().__init__('color_move_node')
         self.bridge = CvBridge()
+
+        self.create_subscription(Image, '/camera/image_raw', self.image_callback, 10)
+        self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.active_movement = False
+
+        self.pose = None
+        self.yaw = None
+
+        self.state = 'WAITING'  # WAITING → MOVING → TURNING → DONE
+        self.color = None
+        self.start_pos = None
+        self.target_yaw = None
+
+        self.timer = self.create_timer(0.05, self.control_loop)
+        self.get_logger().info("Node initialized. Waiting for color...")
+
+    def odom_callback(self, msg):
+        # self.get_logger().info("section 1...")
+        self.pose = msg.pose.pose
+        self.yaw = self.quaternion_to_yaw(self.pose.orientation)
+
+    def quaternion_to_yaw(self, q):
+        # self.get_logger().info("section 2...")
+        siny = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        return math.atan2(siny, cosy)
 
     def image_callback(self, msg):
-        if self.active_movement:
-            return
-        
+        if self.state != 'WAITING':
+            # self.get_logger().info("section 3...")
+            return  # Already acted on color
+
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # Red color range in HSV
-        lower_red1 = np.array([0, 100, 100])
-        upper_red1 = np.array([10, 255, 255])
-        lower_red2 = np.array([160, 100, 100])
-        upper_red2 = np.array([179, 255, 255])
-        lower_blue = np.array([90, 50, 50])
-        upper_blue = np.array([130, 255, 255])
-        
+        red_mask = cv2.inRange(hsv, (0, 100, 100), (10, 255, 255)) | \
+                   cv2.inRange(hsv, (160, 100, 100), (179, 255, 255))
+        blue_mask = cv2.inRange(hsv, (100, 150, 0), (140, 255, 255))
 
-        red_mask = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), cv2.inRange(hsv, lower_red2, upper_red2))
-        blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
+        red = cv2.countNonZero(red_mask) > 0
+        blue = cv2.countNonZero(blue_mask) > 0
 
-        # detection
-        if cv2.countNonZero(red_mask) > 5000:
-            self.get_logger().info('Red detected')
-            # self.move_forward()
-            # self.turn_right()
-            self.start_movement()
-        elif cv2.countNonZero(blue_mask) > 5000:
-            self.get_logger().info('Blue detected')
-            self.start_movement()
-            # self.move_forward()
-            # self.turn_right()
-        # mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-        # mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-        # mask = cv2.bitwise_or(mask1, mask2)
+        if red or blue:
+            if red:
+                self.color = 'red'
+                self.get_logger().info("✅ Red detected. Will move and turn RIGHT.")
+            elif blue:
+                self.color = 'blue'
+                self.get_logger().info("✅ Blue detected. Will move and turn LEFT.")
 
+            self.state = 'WAITING_FOR_ODOM'
 
-    # movement functions
-    def start_movement(self):
-        self.active_movement = True
+    def control_loop(self):
+        # self.get_logger().info("section 5...")
+        if self.state == 'WAITING_FOR_ODOM':
+            if self.pose is None or self.yaw is None:
+                if not hasattr(self, '_printed_odom_waiting'):
+                    self.get_logger().info("Waiting for odometry...")
+                    self._printed_odom_waiting = True
+                return
+            self.start_pos = self.pose.position
+            self.state = 'MOVING'
+            self.get_logger().info("✅ Starting forward movement.")
 
-        twist_msg = Twist()
-        twist_msg.linear.x = 0.5
-        self.cmd_pub.publish(twist_msg)
-        self.create_timer(2.0, self.stop_movement)
-    
-    def stop_movement(self):
-        twist_msg = Twist()
-        twist_msg.linear.x = 0.0
-        self.cmd_pub.publish(twist_msg)
+        elif self.state == 'MOVING':
+            dist = self.distance(self.pose.position, self.start_pos)
+            if dist < FORWARD_DISTANCE - DIST_TOLERANCE:
+                twist = Twist()
+                twist.linear.x = LINEAR_SPEED
+                self.cmd_pub.publish(twist)
+            else:
+                self.cmd_pub.publish(Twist())
+                self.get_logger().info("✅ Forward movement complete.")
+                dir_mult = -1 if self.color == 'red' else 1
+                self.target_yaw = self.normalize_angle(self.yaw + dir_mult * TURN_ANGLE)
+                self.state = 'TURNING'
 
-        # turn
-        twist_msg.angular.z = -1.57
-        self.cmd_pub.publish(twist_msg)
-        self.create_timer(2.0, self.finish_movement)
-    
-    def finish_movement(self):
-        twist_msg = Twist()
-        twist_msg.angular.z = 0.0
-        self.cmd_pub.publish(twist_msg)
-        self.active_movement = False
+        elif self.state == 'TURNING':
+            angle_error = self.normalize_angle(self.target_yaw - self.yaw)
+            if abs(angle_error) > ANGLE_TOLERANCE:
+                twist = Twist()
+                twist.angular.z = ANGULAR_SPEED if angle_error > 0 else -ANGULAR_SPEED
+                self.cmd_pub.publish(twist)
+            else:
+                self.cmd_pub.publish(Twist())
+                self.get_logger().info("✅ Turn complete. Robot done.")
+                self.state = 'WAITING'
 
-    # def move_forward(self):
-    #     twist_msg = Twist()
-    #     twist_msg.linear.x = 0.5
-    #     self.cmd_pub.publish(twist_msg)
-    #     # movement timer
-    #     time.sleep(2)
-    #     twist_msg.linear.x = 0.0
-    #     self.cmd_pub.publish(twist_msg)
+        elif self.state == 'DONE':
+            self.cmd_pub.publish(Twist())  # Ensure robot is still
+            # Optional: reset state to 'WAITING' to allow detection again
 
-    # def turn_right(self):
-    #     twist_msg = Twist()
-    #     twist_msg.angular.z = -0.785 # turn 90 degrees right
-    #     self.cmd_pub.publish(twist_msg)
-    #     twist_msg.angular.z = 0.0
-    #     self.cmd_pub.publish(twist_msg)
+    def distance(self, p1, p2):
+        # self.get_logger().info("section 6...")
+        return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
+
+    def normalize_angle(self, angle):
+        # self.get_logger().info("section 7...")
+        return math.atan2(math.sin(angle), math.cos(angle))
 
 def main(args=None):
     rclpy.init(args=args)
-    node = ColorDetector()
+    node = ColorMove()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
