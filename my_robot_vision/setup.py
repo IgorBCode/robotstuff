@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'red_detector = my_robot_vision.red_detector:main',
+            'color_detector = my_robot_vision.color_detector:main',
         ],
     },
 )
