@@ -8,9 +8,9 @@ import cv2
 import numpy as np
 import math
 
-FORWARD_DISTANCE = 2.0
+FORWARD_DISTANCE = 3.0
 LINEAR_SPEED = 1.0
-ANGULAR_SPEED = 0.4
+ANGULAR_SPEED = 0.5
 TURN_ANGLE = math.pi / 2
 ANGLE_TOLERANCE = 0.03
 DIST_TOLERANCE = 0.05
@@ -36,20 +36,17 @@ class ColorMove(Node):
         self.get_logger().info("Node initialized. Waiting for color...")
 
     def odom_callback(self, msg):
-        # self.get_logger().info("section 1...")
         self.pose = msg.pose.pose
         self.yaw = self.quaternion_to_yaw(self.pose.orientation)
 
     def quaternion_to_yaw(self, q):
-        # self.get_logger().info("section 2...")
         siny = 2.0 * (q.w * q.z + q.x * q.y)
         cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         return math.atan2(siny, cosy)
 
     def image_callback(self, msg):
         if self.state != 'WAITING':
-            # self.get_logger().info("section 3...")
-            return  # Already acted on color
+            return
 
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -72,7 +69,6 @@ class ColorMove(Node):
             self.state = 'WAITING_FOR_ODOM'
 
     def control_loop(self):
-        # self.get_logger().info("section 5...")
         if self.state == 'WAITING_FOR_ODOM':
             if self.pose is None or self.yaw is None:
                 if not hasattr(self, '_printed_odom_waiting'):
