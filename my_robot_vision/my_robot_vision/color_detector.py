@@ -10,9 +10,9 @@ import math
 
 FORWARD_DISTANCE = 3.0
 LINEAR_SPEED = 1.0
-ANGULAR_SPEED = 0.5
+ANGULAR_SPEED = 0.4
 TURN_ANGLE = math.pi / 2
-ANGLE_TOLERANCE = 0.03
+ANGLE_TOLERANCE = 0.005
 DIST_TOLERANCE = 0.05
 
 class ColorMove(Node):
@@ -54,9 +54,23 @@ class ColorMove(Node):
         red_mask = cv2.inRange(hsv, (0, 100, 100), (10, 255, 255)) | \
                    cv2.inRange(hsv, (160, 100, 100), (179, 255, 255))
         blue_mask = cv2.inRange(hsv, (100, 150, 0), (140, 255, 255))
+        green_mask = cv2.inRange(hsv, (40, 50, 50), (80, 255, 255)) 
 
         red = cv2.countNonZero(red_mask) > 0
         blue = cv2.countNonZero(blue_mask) > 0
+        green = cv2.countNonZero(green_mask) > 0
+
+        if green:
+            if self.state != 'FOLLOWING_GREEN':
+                self.get_logger().info("🟢 Green detected moving forward")
+            self.state = 'FOLLOWING_GREEN'
+
+        # stop robot if it sees a different color
+        if self.state == 'FOLLOWING_GREEN' and not green:
+            self.get_logger().info("🛑 Green lost — stopping")
+            self.state = 'WAITING'
+            self.cmd_pub.publish(Twist())
+            return
 
         if red or blue:
             if red:
@@ -69,6 +83,12 @@ class ColorMove(Node):
             self.state = 'WAITING_FOR_ODOM'
 
     def control_loop(self):
+        if self.state == 'FOLLOWING_GREEN':
+            twist = Twist()
+            twist.linear.x = LINEAR_SPEED * 1.5
+            self.cmd_pub.publish(twist)
+            return
+
         if self.state == 'WAITING_FOR_ODOM':
             if self.pose is None or self.yaw is None:
                 if not hasattr(self, '_printed_odom_waiting'):
