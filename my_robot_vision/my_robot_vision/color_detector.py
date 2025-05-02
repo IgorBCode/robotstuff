@@ -27,7 +27,7 @@ class ColorMove(Node):
         self.pose = None
         self.yaw = None
 
-        self.state = 'WAITING'  # WAITING → MOVING → TURNING → DONE
+        self.state = 'WAITING'
         self.color = None
         self.start_pos = None
         self.target_yaw = None
@@ -62,12 +62,12 @@ class ColorMove(Node):
 
         if green:
             if self.state != 'FOLLOWING_GREEN':
-                self.get_logger().info("🟢 Green detected moving forward")
+                self.get_logger().info("Green detected moving forward")
             self.state = 'FOLLOWING_GREEN'
 
         # stop robot if it sees a different color
         if self.state == 'FOLLOWING_GREEN' and not green:
-            self.get_logger().info("🛑 Green lost — stopping")
+            self.get_logger().info("Green lost — stopping")
             self.state = 'WAITING'
             self.cmd_pub.publish(Twist())
             return
@@ -75,10 +75,10 @@ class ColorMove(Node):
         if red or blue:
             if red:
                 self.color = 'red'
-                self.get_logger().info("✅ Red detected. Will move and turn RIGHT.")
+                self.get_logger().info("Red detected. Will move and turn RIGHT.")
             elif blue:
                 self.color = 'blue'
-                self.get_logger().info("✅ Blue detected. Will move and turn LEFT.")
+                self.get_logger().info("Blue detected. Will move and turn LEFT.")
 
             self.state = 'WAITING_FOR_ODOM'
 
@@ -97,7 +97,7 @@ class ColorMove(Node):
                 return
             self.start_pos = self.pose.position
             self.state = 'MOVING'
-            self.get_logger().info("✅ Starting forward movement.")
+            self.get_logger().info("Starting forward movement.")
 
         elif self.state == 'MOVING':
             dist = self.distance(self.pose.position, self.start_pos)
@@ -107,7 +107,7 @@ class ColorMove(Node):
                 self.cmd_pub.publish(twist)
             else:
                 self.cmd_pub.publish(Twist())
-                self.get_logger().info("✅ Forward movement complete.")
+                self.get_logger().info("Forward movement complete.")
                 dir_mult = -1 if self.color == 'red' else 1
                 self.target_yaw = self.normalize_angle(self.yaw + dir_mult * TURN_ANGLE)
                 self.state = 'TURNING'
@@ -120,19 +120,16 @@ class ColorMove(Node):
                 self.cmd_pub.publish(twist)
             else:
                 self.cmd_pub.publish(Twist())
-                self.get_logger().info("✅ Turn complete. Robot done.")
+                self.get_logger().info("Turn complete. Robot done.")
                 self.state = 'WAITING'
 
         elif self.state == 'DONE':
-            self.cmd_pub.publish(Twist())  # Ensure robot is still
-            # Optional: reset state to 'WAITING' to allow detection again
+            self.cmd_pub.publish(Twist())
 
     def distance(self, p1, p2):
-        # self.get_logger().info("section 6...")
         return math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
 
     def normalize_angle(self, angle):
-        # self.get_logger().info("section 7...")
         return math.atan2(math.sin(angle), math.cos(angle))
 
 def main(args=None):
