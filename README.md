@@ -39,7 +39,7 @@ sudo apt install \
 ```
 
 ## Build and run commands
-cd ~/ros2_ws
-colcon build
-source install/setup.bash
-ros2 launch my_robot_bringup my_robot_gazebo.launch.xml
+- cd ~/ros2_ws
+- colcon build
+- source install/setup.bash
+- ros2 launch my_robot_bringup my_robot_gazebo.launch.xml
