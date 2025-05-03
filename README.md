@@ -36,6 +36,7 @@ sudo apt install \
   ros-jazzy-geometry-msgs \
   ros-jazzy-sensor-msgs \
   python3-opencv
+```
 
 ## Build and run commands
 cd ~/ros2_ws
